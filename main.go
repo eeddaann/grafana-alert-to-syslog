@@ -11,13 +11,15 @@ import (
 	"net/http"
 	"strings"
 
-	syslog "github.com/RackSec/srslog"
+	syslog "github.com/RackSec/srslog" // to support windows:
 )
 
+// Config is the configuration for this service
 type Config struct {
 	SyslogHost string
 	Protocol   string
 	Port       string
+	Formatter  syslog.Formatter
 }
 
 var config Config
@@ -131,20 +133,23 @@ func status(w http.ResponseWriter, req *http.Request) {
 }
 
 func handle(w http.ResponseWriter, req *http.Request) {
-	b, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		log.Println(err)
+	if req.Method == http.MethodPost {
+		b, err := ioutil.ReadAll(req.Body)
+		if err != nil {
+			log.Println(err)
+		}
+		var alertObj = parseAlert(string(b))
+		log.Printf("recived alert: %+v\n", alertObj)
+		var formattedLog = formatLog(alertObj)
+		log.Printf("sending log: %+v\n", formattedLog)
+		sysLog, err := syslog.Dial(config.Protocol, config.SyslogHost,
+			formattedLog.Priority, formattedLog.Tag)
+		if err != nil {
+			log.Println(err)
+		}
+		sysLog.SetFormatter(config.Formatter)
+		fmt.Fprintf(sysLog, formattedLog.Msg)
 	}
-	println(string(b))
-	var alertObj = parseAlert(string(b))
-	var formattedLog = formatLog(alertObj)
-	sysLog, err := syslog.Dial(config.Protocol, config.SyslogHost,
-		formattedLog.Priority|syslog.LOG_USER, formattedLog.Tag)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Fprintf(sysLog, formattedLog.Msg)
-	//sysLog.Emerg("And this is a daemon emergency with demotag.")
 
 }
 
@@ -153,10 +158,23 @@ func main() {
 	dest := flag.String("dest", "10.0.0.7:514", "syslog host name")
 	protocol := flag.String("protocol", "tcp", "protocol for syslog: tcp or udp")
 	port := flag.String("port", ":38090", "port for this webserver")
+	formatter := flag.String("format", "RFC3164", "syslog formats: RFC3164/RFC5424/Default")
 	flag.Parse()
 	config = Config{SyslogHost: *dest, Protocol: *protocol, Port: *port}
+	switch strings.ToUpper(*formatter) {
+	case "RFC3164":
+		config.Formatter = syslog.RFC3164Formatter
+	case "RFC5424":
+		config.Formatter = syslog.RFC5424Formatter
+	case "DEFAULT":
+		config.Formatter = syslog.DefaultFormatter
+	default:
+		log.Printf("could not set formatter %v (case insensitive)", *formatter)
+		config.Formatter = syslog.RFC3164Formatter
+	}
 	http.HandleFunc("/status", status)
 	http.HandleFunc("/", handle)
 	log.Println("listen on", *port)
+	log.Printf("configuration: %+v\n", config)
 	log.Fatal(http.ListenAndServe(config.Port, nil))
 }
