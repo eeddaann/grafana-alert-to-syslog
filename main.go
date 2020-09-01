@@ -155,7 +155,7 @@ func handle(w http.ResponseWriter, req *http.Request) {
 
 func main() {
 	//TODO: improve configuration (default priority/facility)
-	dest := flag.String("dest", "10.0.0.7:514", "syslog host name")
+	dest := flag.String("dest", "127.0.0.1:514", "syslog host name")
 	protocol := flag.String("protocol", "tcp", "protocol for syslog: tcp or udp")
 	port := flag.String("port", ":38090", "port for this webserver")
 	formatter := flag.String("format", "RFC3164", "syslog formats: RFC3164/RFC5424/Default")
